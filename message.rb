@@ -10,25 +10,25 @@ class Message
   def parse!
     case @status
     when :choke
-      puts "---choke"
+      puts '---choke'
       peer.state = :choke
     when :unchoke
-      puts "---unchoke"
+      puts '---unchoke'
       peer.state = :unchoke
     when :bitfield
-      puts "---unchoke"
+      puts '---unchoke'
       peer.store_bitfield(payload)
     when :have
-      puts "---have"
+      puts '---have'
       peer.set_bitfield(payload)
     when :piece
       puts '-- piece'
       peer.write_out(payload)
       ## act upon piece
     when :port
-      puts "-- change port"
+      puts '-- change port'
       port = payload.unpack('N')
-      peer.reconnect(port)  
+      peer.reconnect(port)
     end
   end
 end

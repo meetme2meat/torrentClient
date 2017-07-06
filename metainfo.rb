@@ -4,7 +4,7 @@ require 'file_handler'
 require 'digest/sha1'
 require 'em-http-request'
 class Metainfo
-  attr_accessor :client_id, :announce, :piece_length,:info_hash, :connected_peers, :pieces, :client
+  attr_accessor :client_id, :announce, :piece_length, :info_hash, :connected_peers, :pieces, :client
   attr_reader :file_handlers
   def initialize(torrent_file, download_path)
     @connected_peers  = []
@@ -17,7 +17,6 @@ class Metainfo
     build_file_handlers(download_path)
     observe_file_handlers
   end
-
 
   def add(peer)
     @connected_peers << peer
@@ -56,16 +55,16 @@ class Metainfo
   def build_piece_but_last_piece
     0.upto(total_pieces - 2) do |piece_num|
       piece_hash = get_piece_hash(piece_num)
-      @pieces  << Piece.new(self , piece_num, @piece_length, piece_hash)
+      @pieces << Piece.new(self, piece_num, @piece_length, piece_hash)
     end
   end
 
   def build_last_piece
-    @pieces << Piece.new(self , total_pieces-1, last_piece_length, get_piece_hash(total_pieces-1))
+    @pieces << Piece.new(self, total_pieces - 1, last_piece_length, get_piece_hash(total_pieces - 1))
   end
 
   def get_piece_hash(piece_num)
-    @pieces_hashes[(20*piece_num)..(20*(piece_num+1)-1)]
+    @pieces_hashes[(20 * piece_num)..(20 * (piece_num + 1) - 1)]
   end
 
   def total_pieces
@@ -78,7 +77,7 @@ class Metainfo
 
   def total_length
     if multi?
-      @metainfo['info']['files'].inject(0) {|size, file| size + file['length'] }
+      @metainfo['info']['files'].inject(0) { |size, file| size + file['length'] }
     else
       @metainfo['info']['length']
     end
@@ -86,7 +85,7 @@ class Metainfo
 
   def build_file_handlers(directory)
     if multi?
-      @metainfo['info']['files'].inject(0) do |start_byte,file_hash|
+      @metainfo['info']['files'].inject(0) do |start_byte, file_hash|
         file_name = File.expand_path(directory, file_hash['path'].join(seperator))
         length    = file_hash['length']
         end_byte  = start_byte + (length - 1)
@@ -95,12 +94,12 @@ class Metainfo
       end
     else
       file_name = File.expand_path(directory, @metainfo['info']['name'])
-      @file_handlers << initialize_file_handler(file_name, total_length, 0 ,total_length - 1)
+      @file_handlers << initialize_file_handler(file_name, total_length, 0, total_length - 1)
     end
   end
 
   def initialize_file_handler(file_name, size, start_byte, end_byte)
-    FileHandler.new(file_name, size, start_byte , end_byte)
+    FileHandler.new(file_name, size, start_byte, end_byte)
   end
 
   def multi?
@@ -112,9 +111,9 @@ class Metainfo
   end
 
   def observe_file_handlers
-    timer = EM::PeriodicTimer.new(10) do 
-      if file_handlers.all? { |handler| handler.finished? }
-        puts "--- Client entering super seeding mode."
+    timer = EM::PeriodicTimer.new(10) do
+      if file_handlers.all?(&:finished?)
+        puts '--- Client entering super seeding mode.'
         client.enter_super_seeder
         timer.cancel
       end

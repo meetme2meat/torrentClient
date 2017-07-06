@@ -1,4 +1,4 @@
-$:.push(Dir.pwd)
+$LOAD_PATH.push(Dir.pwd)
 require 'eventmachine'
 require 'bencode'
 require 'metainfo'
@@ -24,7 +24,7 @@ class Client
     @tick_loop          =   EM::TickLoop.new { @block_scheduler.schedule! }
   end
   def_delegator :@metainfo, :file_handlers
-  
+
   def get_tracker
     Tracker.new(@metainfo, self)
   end
@@ -42,30 +42,24 @@ class Client
     on_stop { cleanup! }
   end
 
-  # def schedule!
-  #   @block_scheduler.schedule!
-  # end
-  
   def start_block_scheduling!
-    EM.add_timer(10) {
-      @tick_loop.start 
+    EM.add_timer(10) do
+      @tick_loop.start
       @tick_loop.on_stop { puts 'Client entering super seeding mode .. ' }
-    }
-  end 
+    end
+  end
 
   def on_stop(&block)
-    EM::add_shutdown_hook &block
+    EM.add_shutdown_hook &block
   end
 
   def enter_super_seeder
-    puts "entering super seeding mode"
+    puts 'entering super seeding mode'
     @tick_loop.stop
   end
-  
+
   def cleanup!
-    file_handlers.each do |handler|
-      handler.cleanup!
-    end
+    file_handlers.each(&:cleanup!)
   end
 
   def tracker_params
@@ -78,8 +72,8 @@ class Client
       downloaded: '0',
       left:       '10000',
       compact:    '1',
-      no_peer_id: '0',
-    }  
+      no_peer_id: '0'
+    }
   end
 
   def gen_id
@@ -91,7 +85,7 @@ class Client
   end
 end
 
-EM.run {
+EM.run do
   Client.new(ARGV[0], ARGV[1]).run!
   SignalHandler.trap!
-}
+end

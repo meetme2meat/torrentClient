@@ -2,7 +2,7 @@ class Piece
   PIECE_SIZE = 2**14
   extend Forwardable
   attr_accessor :blocks, :written
-  attr_reader :piece_num, :piece_length , :piece_length, :piece_hash
+  attr_reader :piece_num, :piece_length, :piece_length, :piece_hash
 
   def initialize(metainfo, piece_num, piece_length, piece_hash)
     @metainfo     = metainfo
@@ -11,18 +11,18 @@ class Piece
     @piece_hash   = piece_hash
     @written      = false
     @blocks       = []
-    #@stored_byte_size = 0
+    # @stored_byte_size = 0
   end
 
   def complete?
-    blocks.inject(0) { |total_length,block| total_length += block[:length] } == piece_length
+    blocks.inject(0) { |total_length, block| total_length += block[:length] } == piece_length
   end
 
   def write_out
-    #while stored_byte_size != piece_length
-      @metainfo.file_handlers.find { |handler| handler.contain_piece?(self) }.write(self)
-    #end
-    #flush!
+    # while stored_byte_size != piece_length
+    @metainfo.file_handlers.find { |handler| handler.contain_piece?(self) }.write(self)
+    # end
+    # flush!
   end
 
   def valid_checksum?

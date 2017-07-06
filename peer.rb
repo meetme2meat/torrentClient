@@ -6,11 +6,13 @@ class Peer < EM::Connection
   PROTOCOL = 'BitTorrent protocol'.freeze
   KEEP_ALIVE_MESSAGE = "\x00\x00\x00\x00".freeze
 
-  def Peer.connect(ip, port, client)
-    EventMachine::connect ip, port , self, {client: client, port: port, ip: ip} rescue return
+  def self.connect(ip, port, client)
+    EventMachine.connect ip, port, self, client: client, port: port, ip: ip
+  rescue
+    return
   end
 
-  attr_reader :client, :ip , :port, :payload, :keep_alive
+  attr_reader :client, :ip, :port, :payload, :keep_alive
   attr_accessor :state
   def initialize(args)
     @ip                 =    args[:ip]
@@ -18,13 +20,13 @@ class Peer < EM::Connection
     @client             =    args[:client]
     @metainfo           =    client.metainfo
     @state              =    :unchoke
-    @payload            =    String.new
+    @payload            =    ''
     @have_handshake     =    false
     @disconnecting      =    false
     @interested         =    false
     subscribe!
   end
-  def_delegators :@metainfo, :connected_peers , :connected? , :add , :remove, :info_hash, :pieces
+  def_delegators :@metainfo, :connected_peers, :connected?, :add, :remove, :info_hash, :pieces
   def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue
 
   def subscribe!
@@ -56,7 +58,7 @@ class Peer < EM::Connection
   # end
   def connection_completed
     ## start sending KEEP_ALIVE_MESSAGE
-    puts "sending keep_alive sending ..."
+    puts 'sending keep_alive sending ...'
     EM::PeriodicTimer.new(KEEP_ALIVE_INTERVAL) { send_data KEEP_ALIVE_MESSAGE }
   end
 
@@ -64,7 +66,6 @@ class Peer < EM::Connection
     @payload << data
     parse_data!
   end
-
 
   def send_block(payload)
     puts "sending block -- #{payload[:index]}"
@@ -103,9 +104,9 @@ class Peer < EM::Connection
   end
 
   def parse_handshake
-    data = payload.byteslice(0,HANDSHAKE_PAYLOAD_SIZE)
+    data = payload.byteslice(0, HANDSHAKE_PAYLOAD_SIZE)
     throw(:unwind) unless data.size.eql?(HANDSHAKE_PAYLOAD_SIZE)
-    payload.slice!(0,HANDSHAKE_PAYLOAD_SIZE)
+    payload.slice!(0, HANDSHAKE_PAYLOAD_SIZE)
     process_handshake(data)
   end
 
@@ -130,7 +131,7 @@ class Peer < EM::Connection
   end
 
   def validate_handshake(protocol, obtained_infohash, obtained_peerid)
-    if not handshake_valid?(protocol, obtained_infohash, obtained_peerid)
+    unless handshake_valid?(protocol, obtained_infohash, obtained_peerid)
       initiate_disconnect!
     end
     # ... throw
@@ -142,7 +143,7 @@ class Peer < EM::Connection
   end
 
   def initiate_disconnect!
-    disconnect! and throw(:unwind)
+    disconnect! && throw(:unwind)
   end
 
   def add_peer_to_connected_pool
@@ -201,7 +202,7 @@ class Peer < EM::Connection
 
   def enqueue(piece)
     # if the piece is invalid we reschedule it back
-    while(!piece.blocks.empty?)
+    until piece.blocks.empty?
       blockInfo = piece.blocks.pop
       scheduler_queue.push build_block(blockInfo)
     end
@@ -220,7 +221,7 @@ class Peer < EM::Connection
       index:  index,
       offset: offset,
       data:   data,
-      length: data.size,
+      length: data.size
     }
   end
 
@@ -230,13 +231,13 @@ class Peer < EM::Connection
 
   def dissect_payload!(payload)
     length = payload.size
-    piece_num = payload.slice!(0,4).unpack('N').first
-    block_num = payload.slice!(0,4).unpack('N').first
-    data = payload.slice!(0, length-8)
-    [ piece_num, block_num, data ]
+    piece_num = payload.slice!(0, 4).unpack('N').first
+    block_num = payload.slice!(0, 4).unpack('N').first
+    data = payload.slice!(0, length - 8)
+    [piece_num, block_num, data]
   end
 
   def has_more_payload?
-    not payload.empty?
+    !payload.empty?
   end
 end

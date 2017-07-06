@@ -1,7 +1,7 @@
 class BitField
   attr_reader :bits
   def initialize(byte_array)
-    @bits = byte_array.join.split('').map { |char| char.to_i }
+    @bits = byte_array.join.split('').map(&:to_i)
   end
 
   def has_bit?(block_num)

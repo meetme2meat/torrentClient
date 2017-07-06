@@ -16,21 +16,20 @@ class Tracker
     puts "... #{announce} .."
     begin
       http_client = EventMachine::HttpRequest.new(announce).get query: tracker_params
-      http_client.errback {
-        puts "Got error response ..."
+      http_client.errback do
+        puts 'Got error response ...'
         retry!(RETRY_INTERVAL, tracker_params)
-      }
-      http_client.callback {
-        puts "Got response ..."
+      end
+      http_client.callback do
+        puts 'Got response ...'
         evaluate_response!(http_client.response, tracker_params)
-      }
+      end
     rescue Exception => exception
       puts "... Got exception #{exception.message}"
     end
 
-
-    #uri = URI(announce)
-    #uri.query = URI.encode_www_form(tracker_params)
+    # uri = URI(announce)
+    # uri.query = URI.encode_www_form(tracker_params)
 
     # begin
     #   response = Net::HTTP.get_response(uri).body
@@ -49,9 +48,9 @@ class Tracker
 
   def retry!(interval, params)
     puts "retrying ...#{interval}"
-    EventMachine.add_timer(interval) {
+    EventMachine.add_timer(interval) do
       start!(params)
-    }
+    end
   end
 
   def fetch_interval(response)
@@ -63,8 +62,8 @@ class Tracker
     peers = sanitize_peer_details(peer_details)
 
     get_unpacked_peers(peers).uniq.each do |peer|
-      puts " ...... geting unpacked peers"
-      Peer.connect(*peer,client) unless connected?(*peer)
+      puts ' ...... geting unpacked peers'
+      Peer.connect(*peer, client) unless connected?(*peer)
     end
   end
 

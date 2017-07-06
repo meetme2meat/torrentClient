@@ -10,7 +10,7 @@ class BlockRequestScheduler
     divide_piece_and_block!
   end
   def_delegators :@metainfo, :connected_peers, :piece_length, :total_length
-  
+
   # def schedule!
   #   puts "total block size are #{@scheduler_queue.size} "
   #   ## probably worth using tick_loop
@@ -51,19 +51,19 @@ class BlockRequestScheduler
   end
 
   def block_peer_assignment
-    @scheduler_queue.pop { |blockInfo|
+    @scheduler_queue.pop do |blockInfo|
       found_peer = find_peer_for(blockInfo)
       blockInfo[:peer] = found_peer
       delegator = found_peer ? @scheduler_channel : @scheduler_queue
       delegator.push blockInfo
-    }
+    end
   end
   alias schedule! block_peer_assignment
 
   def find_peer_for(block)
-    connected_peers.find_all { |peer|
+    connected_peers.find_all do |peer|
       peer.have_block_num? calculate_block_num(block)
-    }.sample
+    end.sample
   end
 
   def build_block_info(index, offset, size)
@@ -85,7 +85,7 @@ class BlockRequestScheduler
   def number_of_full_block_in_last_piece
     last_piece_size / BLOCK_SIZE
   end
-  alias :last_block_num_for_last_piece :number_of_full_block_in_last_piece
+  alias last_block_num_for_last_piece number_of_full_block_in_last_piece
 
   def last_piece_size
     total_length.remainder(piece_length)
@@ -98,7 +98,7 @@ class BlockRequestScheduler
   def total_number_pieces
     (total_length.to_f / piece_length).ceil
   end
-  alias :last_piece_num :total_number_pieces
+  alias last_piece_num total_number_pieces
 
   def number_of_full_block_in_a_piece
     piece_length / BLOCK_SIZE
