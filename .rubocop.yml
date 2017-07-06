@@ -1,0 +1,34 @@
+inherit_from: .rubocop_todo.yml
+
+Metrics/LineLength:
+  Enabled: false
+
+Metrics/MethodLength:
+  Enabled: false
+
+Documentation:
+  Enabled: false
+
+Style/ClassAndModuleChildren:
+  Enabled: false
+
+Style/AndOr:
+  Enabled: false
+
+Style/RegexpLiteral:
+  Enabled: false
+
+Style/PredicateName:
+  Enabled: false
+
+Style/NumericLiterals:
+  Enabled: false
+
+Metrics/ClassLength:
+  Enabled: false
+
+Style/TrivialAccessors:
+  AllowPredicates: true
+
+Style/AsciiComments:
+  Enabled: false

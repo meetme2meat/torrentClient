@@ -24,7 +24,7 @@ class Tracker
         puts 'Got response ...'
         evaluate_response!(http_client.response, tracker_params)
       end
-    rescue Exception => exception
+    rescue StandardError => exception
       puts "... Got exception #{exception.message}"
     end
 
