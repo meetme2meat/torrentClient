@@ -34,12 +34,16 @@ class Client
     @tracker.start!(tracker_params)
 
     # start the subscriber for channel
-    @message_handler.start!
+    # @message_handler.start!
 
-    # start sending block
-    start_block_scheduling!
+    # # start sending block
+    # start_block_scheduling!
 
-    on_stop { cleanup! }
+    # on_stop { cleanup! }
+  end
+
+  def start_tcp_server!
+    Server.run(self)
   end
 
   def start_block_scheduling!
@@ -65,7 +69,7 @@ class Client
   def tracker_params
     {
       info_hash:  @metainfo.info_hash,
-      peer_id:    @client_id,
+      peer_id:    @metainfo.client_id,
       port:       '6881',
       event:      'started',
       uploaded:   '0',

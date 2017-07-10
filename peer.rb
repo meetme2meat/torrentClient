@@ -7,7 +7,8 @@ class Peer < EM::Connection
   KEEP_ALIVE_MESSAGE = "\x00\x00\x00\x00".freeze
 
   def self.connect(ip, port, client)
-    EventMachine.connect ip, port, self, client: client, port: port, ip: ip
+    puts "========= #{ip} ---- #{port}"
+    #EventMachine.connect ip, port, self, client: client, port: port, ip: ip
   rescue
     return
   end
