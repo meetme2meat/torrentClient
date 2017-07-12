@@ -7,8 +7,8 @@ class Peer < EM::Connection
   KEEP_ALIVE_MESSAGE = "\x00\x00\x00\x00".freeze
 
   def self.connect(ip, port, client)
-    puts "========= #{ip} ---- #{port}"
-    #EventMachine.connect ip, port, self, client: client, port: port, ip: ip
+    puts "Connecting ========= #{ip} ---- #{port}"
+    EventMachine.connect ip, port, self, client: client, port: port, ip: ip
   rescue
     return
   end
@@ -41,7 +41,7 @@ class Peer < EM::Connection
   end
 
   def post_init
-    puts '-- post init'
+    puts '-- post init handshake'
     send_data(handshake)
   end
 
@@ -115,6 +115,7 @@ class Peer < EM::Connection
     !!@have_handshake
   end
 
+  #"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{info_hash}#{id}"
   def process_handshake(data)
     StringIO.open(data) do |io|
       len = io.getbyte

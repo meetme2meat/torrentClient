@@ -10,6 +10,7 @@ require 'signal_handler'
 class Client
   extend Forwardable
   attr_reader :metainfo, :id, :response_channel, :request_channel, :scheduler_queue, :tick_loop
+  attr_accessor :tracker_id
   def initialize(torrent_file, download_path)
     @metainfo           =   get_metainfo(torrent_file, download_path)
     @id                 =   gen_id
@@ -31,7 +32,7 @@ class Client
 
   def run!
     # this start tracker HTTP cycle
-    @tracker.start!(tracker_params)
+    @tracker.start!
 
     # start the subscriber for channel
     # @message_handler.start!
@@ -75,9 +76,10 @@ class Client
       uploaded:   '0',
       downloaded: '0',
       left:       '10000',
-      compact:    '1',
+      compact:    '0',
       no_peer_id: '0'
-    }
+      trackerid:   trackerid
+    }.reject { |k,v| v.nil? }
   end
 
   def gen_id

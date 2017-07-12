@@ -11,18 +11,18 @@ class Tracker
     @client = client
   end
   def_delegators :@metainfo, :connected_peers, :connected?
+  def_delegator :@client, :tracker_params
 
-  def start!(tracker_params)
-    puts "... #{announce} .."
+  def start!
     begin
       http_client = EventMachine::HttpRequest.new(announce).get query: tracker_params
       http_client.errback do
         puts 'Got error response ...'
-        retry!(RETRY_INTERVAL, tracker_params)
+        retry!(RETRY_INTERVAL)
       end
       http_client.callback do
         puts 'Got response ...'
-        evaluate_response!(http_client.response, tracker_params)
+        evaluate_response!(http_client.response)
       end
     rescue StandardError => exception
       puts "... Got exception #{exception.message}"
@@ -39,22 +39,32 @@ class Tracker
     # end
   end
 
-  def evaluate_response!(data, params)
+  def evaluate_response!(data)
     bencode_data = BEncode::Parser.new(data).parse!
     interval = fetch_interval(bencode_data)
-    establish_connection(bencode_data['peers'])
-    retry!(interval, params)
+
+    if not bencode_data['failure reason']
+      warn(bencode_data['warning message']) if bencode_data['warning message']
+      establish_connection(bencode_data['peers'])
+    end
+
+    update_client_tracker_id(bencode_data['trackerid'])
+
+    retry!(interval)
   end
 
-  def retry!(interval, params)
-    puts "retrying ...#{interval}"
-    EventMachine.add_timer(interval) do
-      start!(params)
+  def retry!(interval)
+    EventMachine.add_timer(60) do
+      start!
     end
   end
 
   def fetch_interval(response)
     response.fetch('interval', RETRY_INTERVAL)
+  end
+
+  def update_client_tracker_id(tracker_id)
+    client.tracker_id = tracker_id
   end
 
   def establish_connection(peer_details)
