@@ -7,6 +7,7 @@ require 'tracker'
 require 'peer'
 require 'message_handler'
 require 'signal_handler'
+require 'server'
 class Client
   extend Forwardable
   attr_reader :metainfo, :id, :response_channel, :request_channel, :scheduler_queue, :tick_loop
@@ -23,6 +24,7 @@ class Client
     @block_scheduler    =   BlockRequestScheduler.new(@metainfo, @request_channel, @scheduler_queue)
     @metainfo.client    =   self
     @tick_loop          =   EM::TickLoop.new { @block_scheduler.schedule! }
+    start_tcp_server
   end
   def_delegator :@metainfo, :file_handlers
 
@@ -43,7 +45,7 @@ class Client
     # on_stop { cleanup! }
   end
 
-  def start_tcp_server!
+  def start_tcp_server
     Server.run(self)
   end
 
