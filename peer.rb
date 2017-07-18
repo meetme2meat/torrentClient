@@ -6,9 +6,9 @@ class Peer < EM::Connection
   PROTOCOL = 'BitTorrent protocol'.freeze
   KEEP_ALIVE_MESSAGE = "\x00\x00\x00\x00".freeze
 
-  def self.connect(ip, port, client)
+  def self.connect(ip, port, client) # , peerid
     puts "Connecting ========= #{ip} ---- #{port}"
-    EventMachine.connect ip, port, self, client: client, port: port, ip: ip
+    EventMachine.connect ip, port, self, client: client, port: port, ip: ip # , peerid
   rescue
     return
   end
@@ -20,12 +20,13 @@ class Peer < EM::Connection
     @port               =    args[:port]
     @client             =    args[:client]
     @metainfo           =    client.metainfo
-    @state              =    :unchoke
     @payload            =    ''
     @have_handshake     =    false
     @disconnecting      =    false
-    @interested         =    false
+
     subscribe!
+    @state = { interested: false, choking: true }
+    # @peerid            =    args[:peerid]
   end
   def_delegators :@metainfo, :connected_peers, :connected?, :add, :remove, :info_hash, :pieces
   def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue
@@ -68,6 +69,14 @@ class Peer < EM::Connection
     parse_data!
   end
 
+  def send_have(piece_num)
+    msg_len = "\0\0\0\5"
+    id = "\4"
+    piece_index = [piece_num].pack('N')
+    puts 'sending have message ...'
+    send_data(msg_len << id << piece_index)
+  end
+
   def send_block(payload)
     puts "sending block -- #{payload[:index]}"
     msg_len = "\x00\x00\x00\x0d"
@@ -88,8 +97,8 @@ class Peer < EM::Connection
   end
 
   def show_interest!
-    send_interest unless @interested
-    @interested = true
+    send_interest unless interested?
+    interested!
   end
 
   def send_interest
@@ -115,7 +124,7 @@ class Peer < EM::Connection
     !!@have_handshake
   end
 
-  #"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{info_hash}#{id}"
+  # "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{info_hash}#{id}"
   def process_handshake(data)
     StringIO.open(data) do |io|
       len = io.getbyte
@@ -169,16 +178,14 @@ class Peer < EM::Connection
     reconnect @host, @port
   end
 
-  def uninterested!
-    @interested = false
-  end
-
   def handshake
     "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{info_hash}#{id}"
   end
 
   def store_bitfield(data)
-    @bitfield = BitField.new(data.unpack('B8' * data.length))
+    byte_array = data.unpack('B8' * data.length)
+    bitfield_array = byte_array.join.split('').map(&:to_i)
+    @bitfield = BitField.new(bitfield_array)
   end
 
   def set_bitfield(data)
@@ -199,7 +206,7 @@ class Peer < EM::Connection
   end
 
   def process(piece)
-    piece.invalid_checksum? ? enqueue(piece) : piece.write_out
+    piece.invalid_checksum? ? enqueue(piece) : write(piece)
   end
 
   def enqueue(piece)
@@ -208,6 +215,12 @@ class Peer < EM::Connection
       blockInfo = piece.blocks.pop
       scheduler_queue.push build_block(blockInfo)
     end
+  end
+
+  def write(piece)
+    piece.write_out
+    broadcast(piece.index) if piece.complete?
+    update_bitfield
   end
 
   def build_block(blockInfo)
@@ -241,5 +254,33 @@ class Peer < EM::Connection
 
   def has_more_payload?
     !payload.empty?
+  end
+
+  def broadcast(piece_num)
+    @broadcast.push(piece_num)
+  end
+
+  def update_bitfield
+    client.bitfields[piece_num] = 1
+  end
+
+  def interested!
+    @state[:interested] = true
+  end
+
+  def uninterested!
+    @state[:interested] = false
+  end
+
+  def interested?
+    @state[:interested]
+  end
+
+  def choke!
+    @state[:choking] = true
+  end
+
+  def unchoke!
+    @state[:choking] = false
   end
 end

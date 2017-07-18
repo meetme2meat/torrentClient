@@ -11,12 +11,12 @@ class BlockRequestScheduler
   end
   def_delegators :@metainfo, :connected_peers, :piece_length, :total_length
 
-  # def schedule!
-  #   puts "total block size are #{@scheduler_queue.size} "
-  #   ## probably worth using tick_loop
-  #   ## @tickloop = EM::tick_loop { block_peer_assignment }
-  #   EM::PeriodicTimer.new(0.25) { block_peer_assignment }
-  # end
+  def schedule!
+    puts "total block size are #{@scheduler_queue.size} "
+    ## probably worth using tick_loop
+    ## @tickloop = EM::tick_loop { block_peer_assignment }
+    EM::PeriodicTimer.new(0.25) { block_peer_assignment }
+  end
 
   def divide_piece_and_block!
     store_block_but_last_piece
@@ -52,13 +52,14 @@ class BlockRequestScheduler
 
   def block_peer_assignment
     @scheduler_queue.pop do |blockInfo|
+      # return if client.have_block_num? calculate_block_num?(block)
       found_peer = find_peer_for(blockInfo)
       blockInfo[:peer] = found_peer
       delegator = found_peer ? @scheduler_channel : @scheduler_queue
       delegator.push blockInfo
     end
   end
-  alias schedule! block_peer_assignment
+  # alias schedule! block_peer_assignment
 
   def find_peer_for(block)
     connected_peers.find_all do |peer|

@@ -11,10 +11,10 @@ class Message
     case @status
     when :choke
       puts '---choke'
-      peer.state = :choke
+      peer.choke!
     when :unchoke
       puts '---unchoke'
-      peer.state = :unchoke
+      peer.unchoke!
     when :bitfield
       puts '---unchoke'
       peer.store_bitfield(payload)

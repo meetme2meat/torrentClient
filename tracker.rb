@@ -14,19 +14,17 @@ class Tracker
   def_delegator :@client, :tracker_params
 
   def start!
-    begin
-      http_client = EventMachine::HttpRequest.new(announce).get query: tracker_params
-      http_client.errback do
-        puts 'Got error response ...'
-        retry!(RETRY_INTERVAL)
-      end
-      http_client.callback do
-        puts 'Got response ...'
-        evaluate_response!(http_client.response)
-      end
-    rescue StandardError => exception
-      puts "... Got exception #{exception.message}"
+    http_client = EventMachine::HttpRequest.new(announce).get query: tracker_params
+    http_client.errback do
+      puts 'Got error response ...'
+      retry!(RETRY_INTERVAL)
     end
+    http_client.callback do
+      puts 'Got response ...'
+      evaluate_response!(http_client.response)
+    end
+  rescue StandardError => exception
+    puts "... Got exception #{exception.message}"
 
     # uri = URI(announce)
     # uri.query = URI.encode_www_form(tracker_params)
@@ -43,7 +41,7 @@ class Tracker
     bencode_data = BEncode::Parser.new(data).parse!
     interval = fetch_interval(bencode_data)
 
-    if not bencode_data['failure reason']
+    unless bencode_data['failure reason']
       warn(bencode_data['warning message']) if bencode_data['warning message']
       establish_connection(bencode_data['peers'])
     end
