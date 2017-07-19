@@ -10,7 +10,7 @@ require 'signal_handler'
 require 'server'
 class Client
   extend Forwardable
-  attr_reader :metainfo, :id, :response_channel, :request_channel, :scheduler_queue, :tick_loop, :seeder
+  attr_reader :metainfo, :id, :response_channel, :request_channel, :scheduler_queue, :tick_loop, :seeder, :bitfields, :broadcast_channel
   attr_accessor :tracker_id
   def initialize(torrent_file, download_path)
     @metainfo           =   get_metainfo(torrent_file, download_path)
@@ -19,18 +19,19 @@ class Client
     @tracker            =   get_tracker
     @response_channel   =   EM::Channel.new
     @request_channel    =   EM::Channel.new
+    @broadcast_channel  =   EM::Channel.new
     @scheduler_queue    =   EM::Queue.new
     @message_handler    =   MessageHandler.new(@response_channel)
     @block_scheduler    =   BlockRequestScheduler.new(@metainfo, @request_channel, @scheduler_queue)
     @metainfo.client    =   self
     ## store this in a db
-    @bitfields          =   BitField.new(Array.new(bitfield_length,0))
+    @bitfields          =   BitField.new(Array.new(bitfield_length, 0))
     ## Uncomment this
     #@tick_loop          =   EM::TickLoop.new { @block_scheduler.schedule! }
     #rebuild_bitfield!
     start_tcp_server
   end
-  def_delegators :@metainfo, :file_handlers, :total_pieces, :info_hash
+  def_delegators :@metainfo, :file_handlers, :total_pieces, :info_hash, :connected_peers
 
   def get_tracker
     Tracker.new(@metainfo, self)
@@ -46,6 +47,8 @@ class Client
     # # start sending block
     start_block_scheduling!
 
+    ## start broadcasting ...
+    start_broadcast
     ## on stop cleanup resources
     # on_stop { cleanup! }
   end
@@ -55,11 +58,12 @@ class Client
   end
 
   def start_block_scheduling!
-    @block_scheduler.schedule!
-    # EM.add_timer(10) do
+
+    EM.add_timer(10) do
+      @block_scheduler.schedule!
     #   @tick_loop.start
     #   @tick_loop.on_stop { puts 'Client entering super seeding mode .. ' }
-    # end
+     end
   end
 
   def on_stop(&block)
@@ -69,7 +73,7 @@ class Client
   def enter_super_seeder
     @seeder = true
     puts 'entering super seeding mode'
-    @tick_loop.stop
+    #@tick_loop.stop
   end
 
   def cleanup!
@@ -85,9 +89,9 @@ class Client
       uploaded:   '0',
       downloaded: '0',
       left:       '10000',
-      compact:    '0',
-      no_peer_id: '0'
-      trackerid:   trackerid
+      compact:    '1',
+      no_peer_id: '0',
+      #trackerid:   trackerid
     }.reject { |k,v| v.nil? }
   end
 
@@ -99,12 +103,21 @@ class Client
     Metainfo.new(torrent_file, download_path)
   end
 
-  def broadcast
-    @broadcast.subscribe do |piece_num|
-      @metainfo.connected_peers.interested.all.each do |peer|
-        peer.send_have(piece_num)
+  def start_broadcast
+    broadcast_channel.subscribe do |piece_info|
+      puts "Client got piece to broadcast"
+      connected_peers.each do |peer|
+        puts "broadcasting have ...#{piece_info[:piece_index]}"
+        peer.send_have(piece_info[:piece_index])
       end
+      set_bit(piece_info[:piece_index])
     end
+  end
+
+  def all_peers_except(peer)
+    connected_peers.find_all do |conn_peer|
+      conn_peer != peer
+    end.collect(&:interested?)
   end
 
   def super_seeder?
@@ -115,6 +128,13 @@ class Client
     (total_pieces / 8).ceil * 8
   end
 
+  def have_piece?(index)
+    @bitfields.have_bit?(index)
+  end
+
+  def set_bit(index)
+    @bitfields.set_bit(index)
+  end
   # def rebuild_bitfields
   ## Take info from a stored file about bitfields and reset the bitfields
   # end

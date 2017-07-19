@@ -24,35 +24,36 @@ class MessageHandler
 
   def parse_message(peer)
     while peer.has_more_payload?
-      len_prefix = peer.payload.byteslice(0, 4)
+      lenPrefix = peer.payload.byteslice(0, 4)
       # break
-      break unless len_prefix.size.eql?(4)
+      break unless lenPrefix.size.eql?(4)
 
-      len = len_prefix.unpack('N').first
+      length = lenPrefix.unpack('N').first
 
-      if len.zero?
+      if length.zero?
         ## Keep alive request
+        puts "received keep alive from peer"
         peer.set_keep_alive = true
         peer.payload.slice!(0, 4)
         break
       end
 
-      msg_id = peer.payload.slice(4, 1).bytes.first
+      msgId = peer.payload.slice(4, 1).bytes.first
 
-      break unless msg_id
+      break unless msgId
 
-      break unless (1..9).cover?(msg_id)
+      break unless (1..9).cover?(msgId)
 
-      payload = if (0..3).cover?(msg_id)
+      payload = if (0..3).cover?(msgId)
                   peer.payload.slice!(0, 5)
                   nil
                 else
-                  payload = peer.payload.byteslice(5, len - 1)
-                  break unless payload.size == (len - 1)
-                  peer.payload.slice!(0, len + 4)
+                  payload = peer.payload.byteslice(5, length - 1)
+                  break unless payload.size == (length - 1)
+                  peer.payload.slice!(0, length + 4)
                   payload
       end
-      Message.new(get_status(msg_id), payload, peer).parse!
+      Message.new(get_status(msgId), payload, peer).parse!
     end
   end
 

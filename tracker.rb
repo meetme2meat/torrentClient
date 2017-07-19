@@ -17,6 +17,7 @@ class Tracker
     http_client = EventMachine::HttpRequest.new(announce).get query: tracker_params
     http_client.errback do
       puts 'Got error response ...'
+      puts "Error sending  #{http_client.error}/#{http_client.response}"
       retry!(RETRY_INTERVAL)
     end
     http_client.callback do

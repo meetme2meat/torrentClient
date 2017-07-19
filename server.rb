@@ -85,30 +85,7 @@ class Server < EM::Connection
   end
 
   def process_message!
-    while has_more_payload?
-      len_prefix = peer.payload.byteslice(0, 4)
-      break unless len_prefix.size.eql?(4)
-      payload.slice!(0, 4)
-      len = len_prefix.unpack('N').first
-      keepalive! if len.zero?
-      ## other messages
-      msg_id = payload.slice(4, 1).bytes.first
-
-      break unless (1..9).cover?(msg_id)
-
-      if (0..3).cover?(msg_id)
-        payload.slice!(4, 1)
-        if msg_id == 2
-          interested!
-          send_unchoke
-        end
-
-        uninterested! if msg_id == 3
-      elsif msg_id == 6
-
-      end
-      puts 'Processing message ...'
-    end
+    @response_channel.push(self)
   end
 
   def sent_interest

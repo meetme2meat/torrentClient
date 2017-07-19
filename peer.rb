@@ -23,13 +23,13 @@ class Peer < EM::Connection
     @payload            =    ''
     @have_handshake     =    false
     @disconnecting      =    false
-
+    @state              =   { interested: false, choking: true }
+    @bitfields          =   BitField.new(Array.new(bitfield_length, 0))
     subscribe!
-    @state = { interested: false, choking: true }
     # @peerid            =    args[:peerid]
   end
   def_delegators :@metainfo, :connected_peers, :connected?, :add, :remove, :info_hash, :pieces
-  def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue
+  def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue, :bitfield_length, :broadcast_channel
 
   def subscribe!
     request_channel.subscribe do |data|
@@ -117,6 +117,7 @@ class Peer < EM::Connection
     data = payload.byteslice(0, HANDSHAKE_PAYLOAD_SIZE)
     throw(:unwind) unless data.size.eql?(HANDSHAKE_PAYLOAD_SIZE)
     payload.slice!(0, HANDSHAKE_PAYLOAD_SIZE)
+    puts "received handshake ..."
     process_handshake(data)
   end
 
@@ -146,6 +147,7 @@ class Peer < EM::Connection
       initiate_disconnect!
     end
     # ... throw
+    puts "handshake valid ..."
     add_peer_to_connected_pool
   end
 
@@ -158,6 +160,7 @@ class Peer < EM::Connection
   end
 
   def add_peer_to_connected_pool
+    puts "adding peer to pool ..."
     add(self)
   end
 
@@ -184,16 +187,20 @@ class Peer < EM::Connection
 
   def store_bitfield(data)
     byte_array = data.unpack('B8' * data.length)
-    bitfield_array = byte_array.join.split('').map(&:to_i)
-    @bitfield = BitField.new(bitfield_array)
+    bit_array  = byte_array.join.split('').map(&:to_i)
+    # reuse the exisitng bitfields
+    bit_array.each_with_index do |bit, index|
+      next if bit.zero?
+      set_bitfield(index)
+    end
   end
 
-  def set_bitfield(data)
-    @bitfield.set_bit(data)
+  def set_bitfield(piece_num)
+    @bitfields.set_bit(piece_num)
   end
 
-  def have_block_num?(block)
-    @bitfield.have_bit?(block)
+  def have_piece?(index)
+    @bitfields.have_bit?(index)
   end
 
   def write_out(data)
@@ -219,8 +226,8 @@ class Peer < EM::Connection
 
   def write(piece)
     piece.write_out
-    broadcast(piece.index) if piece.complete?
-    update_bitfield
+    puts "piece complete" if piece.written
+    broadcast(piece.piece_num) if piece.written
   end
 
   def build_block(blockInfo)
@@ -257,11 +264,8 @@ class Peer < EM::Connection
   end
 
   def broadcast(piece_num)
-    @broadcast.push(piece_num)
-  end
-
-  def update_bitfield
-    client.bitfields[piece_num] = 1
+    puts "looking to brodcast"
+    broadcast_channel.push({peer: self, piece_index: piece_num})
   end
 
   def interested!
