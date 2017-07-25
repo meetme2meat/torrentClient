@@ -1,4 +1,5 @@
 require 'bitfield'
+
 class Peer < EM::Connection
   extend Forwardable
   KEEP_ALIVE_INTERVAL    = 60
@@ -12,40 +13,29 @@ class Peer < EM::Connection
     return
   end
 
-  attr_reader :client, :ip, :port, :payload, :keep_alive
+  attr_reader :client, :ip, :port, :payload, :keep_alive, :bitfield, :handshaked
   attr_accessor :state
   def initialize(args)
     @ip                 =    args[:ip]
     @port               =    args[:port]
     @client             =    args[:client]
     @metainfo           =    client.metainfo
-    @state              =    :unchoke
+    @state              =    { am_choking: true, am_interested: false, peer_choking: true, peer_interested: false }
     @payload            =    ''
-    @have_handshake     =    false
+    @handshaked         =    false
     @disconnecting      =    false
     @interested         =    false
-    subscribe!
+    @status             =    { downloading: true, uploading: true }
+    @bitfield           =    BitField.new(Array.new(bitfield_length, 0))
   end
-  def_delegators :@metainfo, :connected_peers, :connected?, :add, :remove, :info_hash, :pieces
-  def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue
+  def_delegators :@metainfo, :connected_peers, :connected?, :add, :remove, :info_hash, :pieces, :bitfield_length
+  def_delegators :@client, :id, :request_channel, :response_channel, :scheduler_queue, :broadcast_channel
 
-  def subscribe!
-    request_channel.subscribe do |data|
-      if data[:peer] == self
-        send_block(data) do
-          show_interest!
-        end
-      end
-    end
-  end
+  alias handshaked? handshaked
 
   def post_init
-    puts '-- post init'
+    p '------- post init'
     send_data(handshake)
-  end
-
-  def set_keep_alive=(value)
-    @keep_alive = value
   end
 
   def disconnect!
@@ -53,68 +43,138 @@ class Peer < EM::Connection
     close_connection
   end
 
-  # def send_block
-  #   send_data(packed_string(p))
-  # end
   def connection_completed
-    ## start sending KEEP_ALIVE_MESSAGE
-    puts 'sending keep_alive sending ...'
+    puts '------- sending keepalive message'
     EM::PeriodicTimer.new(KEEP_ALIVE_INTERVAL) { send_data KEEP_ALIVE_MESSAGE }
   end
 
   def receive_data(data)
     @payload << data
-    parse_data!
+    parse
   end
 
   def send_block(payload)
-    puts "sending block -- #{payload[:index]}"
     msg_len = "\x00\x00\x00\x0d"
     msg_id  = "\x06"
     index   = [payload[:index]].pack('N')
     offset  = [payload[:offset]].pack('N')
     length  = [payload[:length]].pack('N')
-    yield if block_given?
     send_data(msg_len << msg_id << index << offset << length)
   end
+  alias push send_block
+  # alias just to avoid the stupid if/else conditions (probably redo this and remove alias)
 
-  def parse_data!
+  def parse
     catch(:unwind) do
+      ## disconnecting is just a handler to notify that peer has failed and will not process any message
+      ## and about to disconnect
       return if disconnecting?
-      parse_handshake unless have_handshake?
-      delegate_message_to_handler
+      process_handshake unless handshaked?
+      push_to_channel
     end
-  end
-
-  def show_interest!
-    send_interest unless @interested
-    @interested = true
   end
 
   def send_interest
     send_data("\0\0\0\1\2")
   end
 
-  def delegate_message_to_handler
+  def send_unchoke
+    p '--- unchoking remote peer'
+    send_data("\0\0\0\1\1")
+    am_unchoking!
+  end
+
+  def received_unchoke_message
+    @state[:peer_choking] = false
+    puts "#{self} == #{state}"
+  end
+
+  def received_interested_message
+    @state[:peer_interested] = true
+  end
+
+  def received_not_interested_message
+    @state[:peer_interested] = false
+  end
+
+  def received_choke_message
+    @state[:peer_choking] = true
+  end
+
+  def am_choking!
+    @state[:am_choking] = true
+  end
+
+  def am_unchoking!
+    @state[:am_choking] = false
+  end
+
+  def am_interested!
+    @state[:am_interested] = true
+    send_interest
+  end
+
+  def am_not_interested!
+    puts "Sending I'm not interested ..."
+    @state[:am_interested] = false
+    # send_disinterest
+  end
+
+  def send_disinterest
+    send_data("\0\0\0\1\3")
+  end
+
+  def push_to_channel
     response_channel.push(self)
+  end
+
+  def peer_unchoking?
+    !@state[:peer_choking]
+  end
+
+  def peer_interested?
+    @state[:peer_interested]
+  end
+
+  def choking?
+    @state[:am_choking]
+  end
+
+  def unchoking?
+    !choking?
+  end
+
+  def interested?
+    @state[:am_interested]
   end
 
   def disconnecting?
     !!@disconnecting
   end
 
-  def parse_handshake
+  def process_handshake
     data = payload.byteslice(0, HANDSHAKE_PAYLOAD_SIZE)
     throw(:unwind) unless data.size.eql?(HANDSHAKE_PAYLOAD_SIZE)
     payload.slice!(0, HANDSHAKE_PAYLOAD_SIZE)
-    process_handshake(data)
+    parse_handshake(data)
+    puts "Adding peer #{self}"
+    add(self) if handshaked?
+    puts "Added peer #{self}"
+    send_unchoke if choking?
+    puts "am I a leecher #{leecher?} ====="
+    am_interested! if leecher?
+    puts "#{self} === #{state}"
   end
 
-  def have_handshake?
-    !!@have_handshake
+  def leecher?
+    !client.seeder?
   end
 
-  def process_handshake(data)
+  def seeder?
+    client.seeder?
+  end
+
+  def parse_handshake(data)
     StringIO.open(data) do |io|
       len = io.getbyte
       protocol = io.read(len)
@@ -122,20 +182,17 @@ class Peer < EM::Connection
       obtained_infohash = io.read(20)
       obtained_peerid = io.read(20)
       validate_handshake(protocol, obtained_infohash, obtained_peerid)
-      set_have_handshake!
+      handshaked!
     end
   end
 
-  def set_have_handshake!
-    @have_handshake = true
+  def handshaked!
+    @handshaked = true
   end
 
   def validate_handshake(protocol, obtained_infohash, obtained_peerid)
-    unless handshake_valid?(protocol, obtained_infohash, obtained_peerid)
-      initiate_disconnect!
-    end
-    # ... throw
-    add_peer_to_connected_pool
+    return if handshake_valid?(protocol, obtained_infohash, obtained_peerid)
+    initiate_disconnect!
   end
 
   def handshake_valid?(protocol, obtained_infohash, obtained_peerid)
@@ -146,29 +203,20 @@ class Peer < EM::Connection
     disconnect! && throw(:unwind)
   end
 
-  def add_peer_to_connected_pool
-    add(self)
-  end
-
   def unbind
     teardown!
   end
 
   def teardown!
-    uninterested!
     remove(self)
   end
 
   def reconnect!(port)
     # set as uninterested
-    uninterested!
+    puts "#{self} reconnect .... "
     @port = port
-    ## ask event machine to reconnect
+    ## ask event machine to reconnect (be careful not to have duplicate connection)
     reconnect @host, @port
-  end
-
-  def uninterested!
-    @interested = false
   end
 
   def handshake
@@ -176,15 +224,49 @@ class Peer < EM::Connection
   end
 
   def store_bitfield(data)
-    @bitfield = BitField.new(data.unpack('B8' * data.length))
+    byte_array = data.unpack('B8' * data.length)
+    bit_array  = byte_array.join.split('').map(&:to_i)
+    bit_array.each_with_index do |bit, index|
+      next if bit.zero?
+      set_bitfield(index)
+    end
   end
 
-  def set_bitfield(data)
-    @bitfield.set_bit(data)
+  def set_bitfield(index)
+    @bitfield.set_bit(index)
   end
 
-  def have_block_num?(block)
-    @bitfield.have_bit?(block)
+  def have_piece?(index)
+    @bitfield.have_bit?(index)
+  end
+
+  def read_in(payload)
+    piece_num, block_num, length = dissect_request_payload!(payload)
+    puts "#{self} Got Request ....#{piece_num}"
+    return unless client.has_piece?(piece_num)
+    piece = find_piece(piece_num)
+    data = piece.read(length) || ''
+    return unless data.length == length
+    return unless piece.matches_checksum?(data)
+    puts "#{self} read the bytes"
+    len = [9 + length].pack('N')
+    msgId = "\7"
+    index = [piece_num].pack('N')
+    block_num = [block_num].pack('N')
+    puts "#{self} Uploading ... #{piece_num}"
+    send_data(len << msgId << index << block_num << data)
+  end
+
+  def sha1hash_for(data)
+    Digest::SHA1.new.digest(data)
+  end
+
+  def dissect_request_payload!(payload)
+    length = payload.size
+    piece_num = payload.slice!(0, 4).unpack('N').first
+    block_num = payload.slice!(0, 4).unpack('N').first
+    dlen = payload.slice!(0, length - 8).unpack('N').first
+    [piece_num, block_num, dlen]
   end
 
   def write_out(data)
@@ -192,20 +274,33 @@ class Peer < EM::Connection
     piece = find_piece(piece_num)
     return unless piece
     return if piece.written
+    ## If piece is already written no need to write again
     piece.blocks << initialize_block_info(piece_num, block_num, data)
     process(piece) if piece.complete?
   end
 
   def process(piece)
-    piece.invalid_checksum? ? enqueue(piece) : piece.write_out
+    piece.invalid_checksum? ? reprocess(piece) : write(piece)
   end
 
-  def enqueue(piece)
+  def write(piece)
+    piece.write
+    return unless piece.written
+    puts 'piece written'
+    piece_num = piece.piece_num
+    update_client_bitfield(piece_num)
+  end
+
+  def reprocess(piece)
     # if the piece is invalid we reschedule it back
     until piece.blocks.empty?
-      blockInfo = piece.blocks.pop
-      scheduler_queue.push build_block(blockInfo)
+      block = piece.blocks.pop
+      enqueue(block)
     end
+  end
+
+  def enqueue(_block)
+    scheduler_queue.push build_block(blockInfo)
   end
 
   def build_block(blockInfo)
@@ -229,6 +324,14 @@ class Peer < EM::Connection
     pieces.find { |piece| piece.piece_num == piece_num }
   end
 
+  def send_have(piece_num)
+    msg_len = "\0\0\0\5"
+    id = "\4"
+    piece_index = [piece_num].pack('N')
+    puts "sending have message ...#{piece_num}"
+    send_data(msg_len << id << piece_index)
+  end
+
   def dissect_payload!(payload)
     length = payload.size
     piece_num = payload.slice!(0, 4).unpack('N').first
@@ -239,5 +342,13 @@ class Peer < EM::Connection
 
   def has_more_payload?
     !payload.empty?
+  end
+
+  def update_client_bitfield(piece_num)
+    @client.update_bitfield(piece_num)
+  end
+
+  def to_s
+    "#<Peer: #{ip}:#{port}>"
   end
 end

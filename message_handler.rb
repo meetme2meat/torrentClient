@@ -32,7 +32,6 @@ class MessageHandler
 
       if len.zero?
         ## Keep alive request
-        peer.set_keep_alive = true
         peer.payload.slice!(0, 4)
         break
       end

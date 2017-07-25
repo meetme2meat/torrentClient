@@ -11,30 +11,37 @@ class Piece
     @piece_hash   = piece_hash
     @written      = false
     @blocks       = []
-    # @stored_byte_size = 0
+  end
+
+  def matches_checksum?(data)
+    piece_hash == sha1hash_for(data)
+  end
+
+  def sha1hash_for(data)
+    Digest::SHA1.new.digest(data)
   end
 
   def complete?
     blocks.inject(0) { |total_length, block| total_length += block[:length] } == piece_length
   end
 
-  def write_out
+  def write
     # while stored_byte_size != piece_length
     @metainfo.file_handlers.find { |handler| handler.contain_piece?(self) }.write(self)
     # end
     # flush!
   end
 
+  def read(length)
+    @metainfo.file_handlers.find { |handler| handler.contain_piece?(self) }.read(self, length)
+  end
+
   def valid_checksum?
-    block_hash_value == piece_hash
+    matches_checksum?(block_value)
   end
 
   def invalid_checksum?
     !valid_checksum?
-  end
-
-  def block_hash_value
-    Digest::SHA1.new.digest(block_value)
   end
 
   def block_value
@@ -47,14 +54,10 @@ class Piece
   end
 
   def start_byte
-    PIECE_SIZE * piece_num
+    piece_length * piece_num
   end
 
   def end_byte
     (start_byte + piece_length) - 1
-  end
-
-  def seek_byte
-    @start_byte + @stored_byte_size
   end
 end

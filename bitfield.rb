@@ -12,4 +12,21 @@ class BitField
   def set_bit(number)
     @bits[number] = 1
   end
+
+  def unset_bit(number)
+    @bits[number] = 0
+  end
+
+  def set_bits
+    bits.each_index.select { |index| bits[index] == 1 }
+  end
+
+  def unset_bits
+    # can do lazy on this
+    bits.each_index.select { |index| bits[index].zero? }
+  end
+
+  def to_s
+    bits.inspect
+  end
 end

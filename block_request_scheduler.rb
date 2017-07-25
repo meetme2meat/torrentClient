@@ -43,34 +43,37 @@ class BlockRequestScheduler
   end
 
   def store_last_block_for_last_piece
+    return if last_block_in_last_piece_size.zero?
     store_block_in_queue(last_piece_num - 1, last_block_num_for_last_piece, last_block_in_last_piece_size)
   end
 
-  def store_block_in_queue(piece_num, block_num, size)
-    @scheduler_queue.push build_block_info(piece_num, block_num, size)
+  def store_block_in_queue(piece_num, block_num, length)
+    scheduler_queue.push build_block_info(piece_num, block_num, length)
   end
 
-  def block_peer_assignment
-    @scheduler_queue.pop do |blockInfo|
-      found_peer = find_peer_for(blockInfo)
-      blockInfo[:peer] = found_peer
-      delegator = found_peer ? @scheduler_channel : @scheduler_queue
+  def schedule!
+    scheduler_queue.pop do |blockInfo|
+      # if it can find peer for the block then reschedule it back to the scheduler queue
+      delegator = find_peer_for(blockInfo[:index]) || scheduler_queue
       delegator.push blockInfo
     end
   end
-  alias schedule! block_peer_assignment
 
-  def find_peer_for(block)
-    connected_peers.find_all do |peer|
-      peer.have_block_num? calculate_block_num(block)
+  def find_peer_for(piece)
+    available_peers.find_all do |peer|
+      peer.have_piece?(piece)
     end.sample
   end
 
-  def build_block_info(index, offset, size)
+  def available_peers
+    connected_peers.unchoking_remote_peers.interested_peers.all
+  end
+
+  def build_block_info(index, offset, length)
     {
-      index: index,
+      index:  index,
       offset: offset,
-      length: size
+      length: length
     }
   end
 
@@ -88,7 +91,8 @@ class BlockRequestScheduler
   alias last_block_num_for_last_piece number_of_full_block_in_last_piece
 
   def last_piece_size
-    total_length.remainder(piece_length)
+    total_length - (total_number_pieces - 1) * piece_length
+    # total_length.remainder(piece_length)
   end
 
   def number_of_full_pieces

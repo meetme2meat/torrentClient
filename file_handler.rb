@@ -1,11 +1,14 @@
 class FileHandler
+  WRITE_MODE = 'wb'.freeze
+  READ_MODE = 'rb'.freeze
+  APPEND_MODE = 'a+'.freeze
+  attr_reader :file_name, :length, :start_byte, :end_byte
+  attr_accessor :read_handler, :write_handler
   def initialize(file_name, length, start_byte, end_byte)
     @file_name     = file_name
     @length        = length
     @start_byte    = start_byte
     @end_byte      = end_byte
-    @write_handler = File.open(file_name, 'wb')
-    @read_handler  = File.open(file_name, 'rb')
   end
 
   ## check last block
@@ -22,9 +25,20 @@ class FileHandler
       # piece.stored_byte_size += data.size
       @write_handler.write(block[:data])
     end
-
     piece.written = true
-    piece.flush! && close!
+    piece.flush!
+  end
+
+  def file_exist?
+    File.exist?(file_name)
+  end
+
+  def read(piece, length = nil)
+    puts "reading piece -> #{piece.piece_num}"
+    seek_at = piece.start_byte
+    @read_handler.seek(seek_at)
+    byte_length = length || piece.piece_length
+    @read_handler.read(byte_length)
   end
 
   def contain_piece?(piece)
@@ -38,7 +52,7 @@ class FileHandler
   end
 
   def finished?
-    @write_handler.closed? || @write_handler.size == @length
+    @write_handler.size == @length
   end
 
   def cleanup!
